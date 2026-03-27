@@ -1,0 +1,107 @@
+
+<style>
+.ctrl2 { display:flex; align-items:center; gap:12px; margin:8px 0; font-size:13px; color:var(--color-text-secondary); }
+.ctrl2 label { min-width:90px; }
+.ctrl2 input[type=range] { flex:1; }
+.ctrl2 span { min-width:70px; text-align:right; color:var(--color-text-primary); font-size:13px; }
+#verdict { text-align:center; padding:8px; border-radius:8px; margin:8px 0; font-size:13px; font-weight:500; }
+</style>
+
+<canvas id="tchart" height="200"></canvas>
+
+<div class="ctrl2">
+  <label>t 統計量</label>
+  <input type="range" id="sl-t" min="0" max="8" step="0.1" value="7.05" oninput="updateT()">
+  <span id="lb-t">7.05</span>
+</div>
+<div id="verdict"></div>
+<div style="font-size:12px; color:var(--color-text-tertiary); margin-top:4px; text-align:center">
+  紅色面積 = p-value（假設 H₀ 為真，出現這麼極端的 t 值的機率）
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script>
+function tPDF(t, df) {
+  const g1 = lgamma((df+1)/2);
+  const g2 = lgamma(df/2);
+  return Math.exp(g1 - g2) / (Math.sqrt(df * Math.PI)) * Math.pow(1 + t*t/df, -(df+1)/2);
+}
+function lgamma(z) {
+  const c = [76.18009172947146,-86.50532032941677,24.01409824083091,-1.231739572450155,0.1208650973866179e-2,-0.5395239384953e-5];
+  let x=z, y=z, tmp=x+5.5, ser=1.000000000190015;
+  tmp -= (x+0.5)*Math.log(tmp);
+  for(let j=0;j<6;j++) ser += c[j]/++y;
+  return -tmp + Math.log(2.5066282746310005*ser/x);
+}
+function pValue(t, df) {
+  const abst = Math.abs(t);
+  let sum=0, x=df/(df+abst*abst);
+  let term = Math.exp(lgamma((df+1)/2)-lgamma(df/2)-lgamma(0.5)) * Math.pow(x, df/2) * Math.pow(1-x, 0.5) / (df/2);
+  sum = term;
+  for(let i=1; i<200; i++) {
+    term *= (df/2+i-0.5)/(i+0.5)*(1-x);
+    sum += term;
+    if(term < 1e-10) break;
+  }
+  return Math.min(2*sum, 1);
+}
+
+const df = 14;
+let tchart2;
+
+function updateT() {
+  const tv = parseFloat(document.getElementById('sl-t').value);
+  document.getElementById('lb-t').textContent = tv.toFixed(2);
+
+  const p = pValue(tv, df);
+  const verdict = document.getElementById('verdict');
+  if (p < 0.001) {
+    verdict.textContent = 'p = ' + p.toFixed(6) + ' → 強烈顯著（p < 0.001）— 差異幾乎肯定是真實的';
+    verdict.style.background = 'var(--color-background-success)';
+    verdict.style.color = 'var(--color-text-success)';
+  } else if (p < 0.05) {
+    verdict.textContent = 'p = ' + p.toFixed(4) + ' → 顯著（p < 0.05）— 拒絕 H₀';
+    verdict.style.background = 'var(--color-background-success)';
+    verdict.style.color = 'var(--color-text-success)';
+  } else {
+    verdict.textContent = 'p = ' + p.toFixed(4) + ' → 不顯著（p ≥ 0.05）— 無法拒絕 H₀';
+    verdict.style.background = 'var(--color-background-warning)';
+    verdict.style.color = 'var(--color-text-warning)';
+  }
+
+  const xs = [], ys = [], colors = [];
+  for (let t2 = -6; t2 <= 6; t2 += 0.1) {
+    xs.push(t2.toFixed(1));
+    const y = tPDF(t2, df);
+    ys.push(y);
+    colors.push(Math.abs(t2) >= tv ? 'rgba(226,75,74,0.7)' : 'rgba(29,158,117,0.35)');
+  }
+
+  if (!tchart2) {
+    const ctx = document.getElementById('tchart').getContext('2d');
+    tchart2 = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: xs,
+        datasets: [{data: ys, backgroundColor: colors, borderWidth: 0, barPercentage: 1.0, categoryPercentage: 1.0}]
+      },
+      options: {
+        animation: false,
+        plugins: { legend: {display:false}, tooltip: {enabled:false} },
+        scales: {
+          x: { ticks: { maxTicksLimit:7, color:'var(--color-text-secondary)', font:{size:11},
+              callback: function(val,i){ const v=parseFloat(this.getLabelForValue(val)); return Number.isInteger(v)?v:''; }
+          }, grid:{display:false} },
+          y: { display:false }
+        }
+      }
+    });
+  } else {
+    tchart2.data.labels = xs;
+    tchart2.data.datasets[0].data = ys;
+    tchart2.data.datasets[0].backgroundColor = colors;
+    tchart2.update('none');
+  }
+}
+updateT();
+</script>
