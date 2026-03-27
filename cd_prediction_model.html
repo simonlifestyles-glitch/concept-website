@@ -1,0 +1,128 @@
+
+<style>
+.ctrl3 { display:flex; align-items:center; gap:12px; margin:8px 0; font-size:13px; color:var(--color-text-secondary); }
+.ctrl3 label { min-width:100px; font-size:13px; }
+.ctrl3 input[type=range] { flex:1; }
+.ctrl3 span { min-width:80px; text-align:right; color:var(--color-text-primary); font-size:13px; font-weight:500; }
+.pred-display { display:flex; gap:16px; margin:12px 0; }
+.pred-box { flex:1; text-align:center; background:var(--color-background-secondary); border:1px solid var(--color-border-tertiary); border-radius:10px; padding:10px; }
+.pred-val { font-size:24px; font-weight:500; }
+.pred-lbl { font-size:11px; color:var(--color-text-secondary); margin-top:2px; }
+.model-eq { background:var(--color-background-secondary); border-radius:8px; padding:10px 16px; font-size:13px; color:var(--color-text-secondary); margin:8px 0; text-align:center; font-family:var(--font-mono); }
+.warn-box { border-radius:8px; padding:8px 14px; font-size:13px; margin-top:8px; }
+</style>
+
+<div class="model-eq">Ŷ = 64.75 − 1.25·x<sub>A</sub> − 0.25·x<sub>B</sub> − 0.30·x<sub>A</sub>x<sub>B</sub></div>
+
+<div class="ctrl3">
+  <label>曝光能量</label>
+  <input type="range" id="sl-eng" min="19" max="25" step="0.1" value="22" oninput="predict()">
+  <span id="lb-eng">22.0 mJ/cm²</span>
+</div>
+<div class="ctrl3">
+  <label>焦距偏移</label>
+  <input type="range" id="sl-foc" min="-0.15" max="0.15" step="0.005" value="0" oninput="predict()">
+  <span id="lb-foc">0.000 μm</span>
+</div>
+
+<div class="pred-display">
+  <div class="pred-box">
+    <div class="pred-val" id="pred-xA" style="color:var(--color-text-info)">0.00</div>
+    <div class="pred-lbl">編碼值 x_A</div>
+  </div>
+  <div class="pred-box">
+    <div class="pred-val" id="pred-xB" style="color:var(--color-text-warning)">0.00</div>
+    <div class="pred-lbl">編碼值 x_B</div>
+  </div>
+  <div class="pred-box" style="flex:2; border-color:var(--color-border-secondary);">
+    <div class="pred-val" id="pred-cd" style="font-size:28px;">64.75</div>
+    <div class="pred-lbl">預測 CD 值 (nm)</div>
+  </div>
+</div>
+
+<div id="warn-div" class="warn-box"></div>
+
+<canvas id="surfChart" height="200"></canvas>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script>
+let surfChart = null;
+
+function predict() {
+  const eng = parseFloat(document.getElementById('sl-eng').value);
+  const foc = parseFloat(document.getElementById('sl-foc').value);
+  document.getElementById('lb-eng').textContent = eng.toFixed(1) + ' mJ/cm²';
+  document.getElementById('lb-foc').textContent = foc.toFixed(3) + ' μm';
+
+  const xA = (eng - 22) / 2;
+  const xB = (foc - 0) / 0.1;
+  const cd = 64.75 - 1.25*xA - 0.25*xB - 0.30*xA*xB;
+
+  document.getElementById('pred-xA').textContent = xA.toFixed(2);
+  document.getElementById('pred-xB').textContent = xB.toFixed(2);
+  document.getElementById('pred-cd').textContent = cd.toFixed(2);
+
+  const cdEl = document.getElementById('pred-cd');
+  if (cd >= 64 && cd <= 66) {
+    cdEl.style.color = 'var(--color-text-success)';
+  } else if (cd >= 63 && cd <= 67) {
+    cdEl.style.color = 'var(--color-text-warning)';
+  } else {
+    cdEl.style.color = 'var(--color-text-danger)';
+  }
+
+  const warn = document.getElementById('warn-div');
+  const outRange = Math.abs(xA) > 1 || Math.abs(xB) > 1;
+  if (outRange) {
+    warn.style.background = 'var(--color-background-warning)';
+    warn.style.color = 'var(--color-text-warning)';
+    warn.textContent = '注意：此條件超出實驗範圍（外插），預測可信度下降。';
+  } else {
+    warn.style.background = 'var(--color-background-success)';
+    warn.style.color = 'var(--color-text-success)';
+    warn.textContent = '此條件在實驗範圍內（內插），預測可信。';
+  }
+
+  drawSurface(eng, foc, cd);
+}
+
+function drawSurface(curEng, curFoc, curCD) {
+  const energies = [20, 21, 22, 23, 24];
+  const focLabels = ['−0.1 μm', '−0.05 μm', '0 μm', '+0.05 μm', '+0.1 μm'];
+  const focs = [-0.1, -0.05, 0, 0.05, 0.1];
+
+  const datasets = focs.map((f, i) => {
+    const colors = ['#185FA5','#378ADD','#1D9E75','#EF9F27','#D85A30'];
+    return {
+      label: focLabels[i],
+      data: energies.map(e => {
+        const xA = (e-22)/2, xB = (f)/0.1;
+        return 64.75 - 1.25*xA - 0.25*xB - 0.30*xA*xB;
+      }),
+      borderColor: colors[i], backgroundColor: colors[i],
+      pointRadius: 3, tension: 0.3
+    };
+  });
+
+  if (!surfChart) {
+    const ctx = document.getElementById('surfChart').getContext('2d');
+    surfChart = new Chart(ctx, {
+      type: 'line',
+      data: { labels: energies.map(e => e+' mJ'), datasets },
+      options: {
+        animation: false,
+        plugins: { legend: { position:'right', labels:{ color:'var(--color-text-secondary)', font:{size:11}, boxWidth:12 } } },
+        scales: {
+          x: { title:{ display:true, text:'曝光能量', color:'var(--color-text-secondary)', font:{size:12} }, ticks:{ color:'var(--color-text-secondary)', font:{size:11} }, grid:{ color:'var(--color-border-tertiary)' } },
+          y: { title:{ display:true, text:'預測 CD (nm)', color:'var(--color-text-secondary)', font:{size:12} }, ticks:{ color:'var(--color-text-secondary)', font:{size:11} }, grid:{ color:'var(--color-border-tertiary)' } }
+        }
+      }
+    });
+  } else {
+    surfChart.data.datasets = datasets;
+    surfChart.update('none');
+  }
+}
+
+predict();
+</script>
