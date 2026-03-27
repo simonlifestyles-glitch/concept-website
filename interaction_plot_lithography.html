@@ -1,0 +1,107 @@
+
+<style>
+.tab-row { display:flex; gap:8px; margin-bottom:12px; }
+.tab { padding:6px 16px; border-radius:6px; font-size:13px; cursor:pointer; background:var(--color-background-secondary); color:var(--color-text-secondary); border:1px solid var(--color-border-tertiary); }
+.tab.active { background:var(--color-background-info); color:var(--color-text-info); border-color:var(--color-border-tertiary); }
+.explain { background:var(--color-background-secondary); border-radius:8px; padding:12px 16px; font-size:13px; color:var(--color-text-secondary); line-height:1.7; margin-top:10px; }
+.explain strong { color:var(--color-text-primary); font-weight:500; }
+</style>
+
+<div class="tab-row">
+  <div class="tab active" onclick="showTab('interaction')">交互作用圖</div>
+  <div class="tab" onclick="showTab('main')">主效應圖</div>
+  <div class="tab" onclick="showTab('pareto')">效應大小比較</div>
+</div>
+
+<canvas id="mainChart" height="220"></canvas>
+<div id="explain-box" class="explain"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script>
+let currentChart = null;
+let currentTab = 'interaction';
+
+const explains = {
+  interaction: '<strong>交互作用圖解讀：</strong>兩條線不平行，代表交互作用存在。<br>低焦距（藍線）：能量從 20→24，CD 從 65.95 降到 64.05，變化 −1.90 nm<br>高焦距（橙線）：能量從 20→24，CD 從 66.05 降到 62.95，變化 −3.10 nm<br><strong>結論：焦距偏高時，能量對 CD 的影響更強烈。</strong>這就是 OFAT 找不到的資訊。',
+  main: '<strong>主效應圖解讀：</strong>每條線代表一個因子的平均效應（固定另一個因子）。<br>曝光能量效應 = −2.50 nm（影響大）<br>焦距效應 = −0.50 nm（影響小）<br>但主效應圖沒有顯示兩者的交互，需要搭配交互作用圖一起看。',
+  pareto: '<strong>效應大小比較：</strong>條形越長代表影響越大。<br>A（曝光能量）= −2.50 nm，是主要驅動因子。<br>AB（交互作用）= −0.60 nm，不可忽略。<br>B（焦距）= −0.50 nm，效應較小但仍顯著。<br><strong>工程意義：要最佳化 CD，優先調曝光能量，但必須同時考慮焦距。</strong>'
+};
+
+function showTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach((t,i) => {
+    t.classList.toggle('active', ['interaction','main','pareto'][i] === tab);
+  });
+  document.getElementById('explain-box').innerHTML = explains[tab];
+  drawChart(tab);
+}
+
+function drawChart(tab) {
+  if (currentChart) { currentChart.destroy(); currentChart = null; }
+  const ctx = document.getElementById('mainChart').getContext('2d');
+
+  if (tab === 'interaction') {
+    currentChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: ['低能量 (20 mJ)', '高能量 (24 mJ)'],
+        datasets: [
+          { label: '低焦距 (−0.1 μm)', data: [65.95, 64.05], borderColor:'#378ADD', backgroundColor:'#378ADD', pointRadius:6, pointHoverRadius:8, tension:0 },
+          { label: '高焦距 (+0.1 μm)', data: [66.05, 62.95], borderColor:'#EF9F27', backgroundColor:'#EF9F27', pointRadius:6, pointHoverRadius:8, tension:0 }
+        ]
+      },
+      options: {
+        animation: false,
+        plugins: { legend: { position:'top', labels:{ color:'var(--color-text-secondary)', font:{size:12} } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(2) + ' nm' } } },
+        scales: {
+          x: { ticks:{ color:'var(--color-text-secondary)', font:{size:12} }, grid:{ color:'var(--color-border-tertiary)' } },
+          y: { min:62, max:67, title:{ display:true, text:'CD 值 (nm)', color:'var(--color-text-secondary)', font:{size:12} }, ticks:{ color:'var(--color-text-secondary)', font:{size:12} }, grid:{ color:'var(--color-border-tertiary)' } }
+        }
+      }
+    });
+  } else if (tab === 'main') {
+    currentChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: ['低水準 (−)', '高水準 (+)'],
+        datasets: [
+          { label: 'A：曝光能量', data: [66.00, 63.50], borderColor:'#378ADD', backgroundColor:'#378ADD', pointRadius:6, tension:0 },
+          { label: 'B：焦距偏移', data: [65.00, 64.50], borderColor:'#EF9F27', backgroundColor:'#EF9F27', pointRadius:6, tension:0 }
+        ]
+      },
+      options: {
+        animation: false,
+        plugins: { legend: { position:'top', labels:{ color:'var(--color-text-secondary)', font:{size:12} } } },
+        scales: {
+          x: { ticks:{ color:'var(--color-text-secondary)', font:{size:12} }, grid:{ color:'var(--color-border-tertiary)' } },
+          y: { min:62, max:67.5, title:{ display:true, text:'CD 平均值 (nm)', color:'var(--color-text-secondary)', font:{size:12} }, ticks:{ color:'var(--color-text-secondary)', font:{size:12} }, grid:{ color:'var(--color-border-tertiary)' } }
+        }
+      }
+    });
+  } else {
+    currentChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: ['A：曝光能量', 'AB：交互作用', 'B：焦距偏移'],
+        datasets: [{
+          label: '效應大小 (nm)',
+          data: [2.50, 0.60, 0.50],
+          backgroundColor: ['#378ADD','#7F77DD','#EF9F27'],
+          borderRadius: 6, borderWidth: 0
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        animation: false,
+        plugins: { legend:{ display:false }, tooltip:{ callbacks:{ label: ctx => '效應: ±' + ctx.parsed.x.toFixed(2) + ' nm' } } },
+        scales: {
+          x: { title:{ display:true, text:'效應絕對值 (nm)', color:'var(--color-text-secondary)', font:{size:12} }, ticks:{ color:'var(--color-text-secondary)', font:{size:12} }, grid:{ color:'var(--color-border-tertiary)' } },
+          y: { ticks:{ color:'var(--color-text-secondary)', font:{size:12} }, grid:{ display:false } }
+        }
+      }
+    });
+  }
+}
+
+showTab('interaction');
+</script>
