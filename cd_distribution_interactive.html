@@ -1,0 +1,124 @@
+
+<style>
+.ctrl { display:flex; align-items:center; gap:12px; margin:8px 0; font-size:13px; color:var(--color-text-secondary); }
+.ctrl label { min-width:80px; }
+.ctrl input[type=range] { flex:1; }
+.ctrl span { min-width:60px; text-align:right; color:var(--color-text-primary); font-size:13px; }
+#stats-row { display:flex; gap:20px; margin:8px 0 4px; font-size:13px; }
+.stat-box { background:var(--color-background-secondary); border:1px solid var(--color-border-tertiary); border-radius:8px; padding:6px 14px; text-align:center; }
+.stat-val { font-size:16px; font-weight:500; color:var(--color-text-primary); }
+.stat-lbl { font-size:11px; color:var(--color-text-secondary); }
+</style>
+
+<div id="stats-row">
+  <div class="stat-box"><div class="stat-val" id="val-mean">65.15</div><div class="stat-lbl">平均 CD (nm)</div></div>
+  <div class="stat-box"><div class="stat-val" id="val-sd">0.29</div><div class="stat-lbl">標準差 s</div></div>
+  <div class="stat-box"><div class="stat-val" id="val-3s">±0.87</div><div class="stat-lbl">±3σ 範圍</div></div>
+  <div class="stat-box"><div class="stat-val" id="val-cpk" style="color:var(--color-text-success)">1.38</div><div class="stat-lbl">Cpk (規格±3nm)</div></div>
+</div>
+
+<canvas id="chart" height="200"></canvas>
+
+<div class="ctrl">
+  <label>平均 CD</label>
+  <input type="range" id="sl-mean" min="62" max="68" step="0.1" value="65.15" oninput="update()">
+  <span id="lb-mean">65.15 nm</span>
+</div>
+<div class="ctrl">
+  <label>標準差 σ</label>
+  <input type="range" id="sl-sd" min="0.05" max="2" step="0.05" value="0.29" oninput="update()">
+  <span id="lb-sd">0.29 nm</span>
+</div>
+<div class="ctrl" style="font-size:12px; color:var(--color-text-tertiary); margin-top:4px;">
+  規格：目標 65 nm，上下各 3 nm（62~68 nm）
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script>
+const LSL = 62, USL = 68, TARGET = 65;
+let chart;
+
+function norm(x, mu, sigma) {
+  return Math.exp(-0.5*((x-mu)/sigma)**2) / (sigma * Math.sqrt(2*Math.PI));
+}
+
+function cpk(mu, sigma) {
+  const cpu = (USL - mu) / (3 * sigma);
+  const cpl = (mu - LSL) / (3 * sigma);
+  return Math.min(cpu, cpl);
+}
+
+function update() {
+  const mu = parseFloat(document.getElementById('sl-mean').value);
+  const sd = parseFloat(document.getElementById('sl-sd').value);
+
+  document.getElementById('lb-mean').textContent = mu.toFixed(2) + ' nm';
+  document.getElementById('lb-sd').textContent = sd.toFixed(2) + ' nm';
+  document.getElementById('val-mean').textContent = mu.toFixed(2);
+  document.getElementById('val-sd').textContent = sd.toFixed(2);
+  document.getElementById('val-3s').textContent = '±' + (3*sd).toFixed(2);
+
+  const ck = cpk(mu, sd);
+  const cpkEl = document.getElementById('val-cpk');
+  cpkEl.textContent = ck.toFixed(2);
+  cpkEl.style.color = ck >= 1.33 ? 'var(--color-text-success)' : ck >= 1.0 ? 'var(--color-text-warning)' : 'var(--color-text-danger)';
+
+  const xs = [], ys = [], colors = [];
+  for (let x = 60; x <= 70; x += 0.05) {
+    xs.push(x.toFixed(2));
+    const y = norm(x, mu, sd);
+    ys.push(y);
+    colors.push(x < LSL || x > USL ? 'rgba(226,75,74,0.7)' : 'rgba(29,158,117,0.55)');
+  }
+
+  if (!chart) {
+    const ctx = document.getElementById('chart').getContext('2d');
+    chart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: xs,
+        datasets: [{
+          data: ys,
+          backgroundColor: colors,
+          borderWidth: 0,
+          barPercentage: 1.0,
+          categoryPercentage: 1.0
+        }]
+      },
+      options: {
+        animation: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { enabled: false },
+          annotation: {}
+        },
+        scales: {
+          x: {
+            ticks: {
+              maxTicksLimit: 6,
+              color: 'var(--color-text-secondary)',
+              font: { size: 11 },
+              callback: function(val, i) {
+                const v = parseFloat(this.getLabelForValue(val));
+                return Math.abs(v - Math.round(v)) < 0.01 ? v.toFixed(0) + ' nm' : '';
+              }
+            },
+            grid: { display: false }
+          },
+          y: {
+            display: false,
+            grid: { display: false }
+          }
+        }
+      }
+    });
+  } else {
+    chart.data.labels = xs;
+    chart.data.datasets[0].data = ys;
+    chart.data.datasets[0].backgroundColor = colors;
+    chart.update('none');
+  }
+}
+
+update();
+</script>
